@@ -1,6 +1,7 @@
 """
 dPEZ Preflight — Wall Thickness & Print Geometry Analyzer
-Detects walls too thin to print, floating geometry, and extreme overhangs.
+Detects walls too thin to print, floating geometry, extreme overhangs,
+and interior cavities (trapped shells).
 """
 import trimesh
 import numpy as np
@@ -34,16 +35,23 @@ def analyze_wall_thickness(mesh: trimesh.Trimesh, printer: PrinterProfile) -> Li
         # Sample face centroids and cast rays inward along face normals
         # to estimate local thickness. Seed for reproducibility.
         rng = np.random.default_rng(seed=42)
-        sample_count = min(500, len(mesh.faces))
-        sample_indices = rng.choice(len(mesh.faces), sample_count, replace=False)
-        
+        face_count = len(mesh.faces)
+        # Adaptive sampling: fewer rays for large meshes (diminishing returns)
+        if face_count < 1000:
+            sample_count = face_count
+        elif face_count < 50000:
+            sample_count = 200
+        else:
+            sample_count = 150  # large meshes: ray cast is O(samples * faces)
+        sample_indices = rng.choice(face_count, sample_count, replace=False)
+
         face_centers = mesh.triangles_center[sample_indices]
-        face_normals = mesh.face_normals[sample_indices]
-        
+        face_normals_sampled = mesh.face_normals[sample_indices]
+
         # Cast rays inward (opposite normal direction)
-        ray_origins = face_centers + face_normals * 0.01  # small offset
-        ray_directions = -face_normals
-        
+        ray_origins = face_centers + face_normals_sampled * 0.01  # small offset
+        ray_directions = -face_normals_sampled
+
         locations, index_ray, _ = mesh.ray.intersects_location(
             ray_origins=ray_origins,
             ray_directions=ray_directions,
@@ -161,17 +169,22 @@ def analyze_overhangs(mesh: trimesh.Trimesh) -> List[Issue]:
     return issues
 
 
-def analyze_floating_geometry(mesh: trimesh.Trimesh) -> List[Issue]:
+def analyze_floating_geometry(mesh: trimesh.Trimesh, component_count: int = None) -> List[Issue]:
     """
     Detect geometry that has no connection to the main body.
     Floating pieces = print artifacts or failures.
+    Accepts precomputed component_count to skip expensive split on single-body meshes.
     """
     issues = []
-    
+
+    # Fast path: skip expensive mesh.split() if we already know there's only 1 body
+    if component_count is not None and component_count <= 1:
+        return issues
+
     try:
         # Split into bodies and check for small disconnected pieces
         bodies = mesh.split(only_watertight=False)
-        
+
         if len(bodies) > 1:
             # Sort by volume
             volumes = []
@@ -204,6 +217,79 @@ def analyze_floating_geometry(mesh: trimesh.Trimesh) -> List[Issue]:
                     fix_description="Auto-repair can remove bodies smaller than 1% of total volume.",
                     technical_detail=f"total_bodies={len(bodies)}, debris_count={len(debris)}"
                 ))
+    except Exception:
+        pass
+
+    return issues
+
+
+def analyze_interior_cavities(mesh: trimesh.Trimesh, component_count: int = None) -> List[Issue]:
+    """
+    Detect interior cavities — closed shells fully enclosed inside the outer body.
+    These waste infill, trap support material, and can cause print failures.
+    Uses centroid containment: if body B's centroid is inside body A, B is a cavity.
+    """
+    issues = []
+
+    # Fast path: single body = no cavities possible
+    if component_count is not None and component_count <= 1:
+        return issues
+
+    try:
+        bodies = mesh.split(only_watertight=False)
+        if len(bodies) < 2:
+            return issues
+
+        # Sort bodies by bounding box volume (largest first = outer shell)
+        body_info = []
+        for b in bodies:
+            try:
+                bb_vol = float(b.bounding_box.volume)
+            except Exception:
+                bb_vol = 0.0
+            body_info.append((bb_vol, b))
+        body_info.sort(key=lambda x: x[0], reverse=True)
+
+        # Check if smaller bodies are enclosed inside larger ones
+        cavities = []
+        for i in range(1, len(body_info)):
+            inner_vol, inner_body = body_info[i]
+            centroid = inner_body.centroid.reshape(1, 3)
+
+            for j in range(i):
+                outer_vol, outer_body = body_info[j]
+                # Only test if inner is much smaller than outer (skip near-equal pairs)
+                if inner_vol > outer_vol * 0.9:
+                    continue
+                # Outer must be watertight for contains() to work reliably
+                if not outer_body.is_watertight:
+                    continue
+                try:
+                    if outer_body.contains(centroid)[0]:
+                        cavity_vol = abs(inner_body.volume) if inner_body.is_watertight else inner_vol * 0.1
+                        cavities.append(cavity_vol)
+                        break  # found enclosing body, no need to check more
+                except Exception:
+                    continue
+
+        if cavities:
+            total_cavity_vol = sum(cavities)
+            issues.append(Issue(
+                code="INTERIOR_CAVITIES",
+                severity=Severity.WARNING,
+                title=f"{len(cavities)} interior cavity/ies detected",
+                description=(
+                    f"Found {len(cavities)} closed shell(s) fully enclosed inside the outer body. "
+                    f"Estimated trapped volume: {total_cavity_vol:.1f}mm\u00b3. "
+                    f"Interior shells waste infill material, can trap support structures, "
+                    f"and may confuse slicer inside/outside detection."
+                ),
+                affected_count=len(cavities),
+                auto_fixable=True,
+                fix_description="Auto-repair can remove interior shells to make the model solid.",
+                technical_detail=f"cavities={len(cavities)}, trapped_volume={total_cavity_vol:.1f}mm3"
+            ))
+
     except Exception:
         pass
 
