@@ -36,8 +36,10 @@ Thumbs.db
 # Project-specific: large STL files (samples are fine, production files are not)
 *.stl
 *.STL
-# But keep sample files
+# But keep sample files and the main demo files
 !samples/*.stl
+!father.stl
+!father_fixed.stl
 
 # Generated reports
 *.report.json
