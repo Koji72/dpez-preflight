@@ -28,7 +28,8 @@ SCORE_PENALTIES = {
 def analyze_stl(
     filepath: str,
     printer: PrinterProfile = PrinterProfile.BAMBU_X1C,
-    attempt_repair: bool = False
+    attempt_repair: bool = False,
+    fast_repair: bool = False,
 ) -> PrintabilityReport:
     """
     Run full analysis pipeline on an STL file.
@@ -111,7 +112,7 @@ def analyze_stl(
     # Optional: auto-repair pass
     if attempt_repair:
         from core.repair import repair_mesh
-        repaired_mesh, applied_fixes = repair_mesh(mesh)
+        repaired_mesh, applied_fixes = repair_mesh(mesh, fast=fast_repair)
         if applied_fixes:
             for fix in applied_fixes:
                 all_issues.append(Issue(

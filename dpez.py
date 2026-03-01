@@ -47,6 +47,9 @@ PRINTER_MAP = {
 @click.option("--repair", "-r",
               is_flag=True, default=False,
               help="Attempt automatic mesh repair")
+@click.option("--fast-repair", "-F",
+              is_flag=True, default=False,
+              help="Fast repair: skip pymeshfix hole filling (much faster on large meshes)")
 @click.option("--output", "-o",
               default=None,
               help="Output path for repaired STL (requires --repair)")
@@ -56,7 +59,7 @@ PRINTER_MAP = {
 @click.option("--save-json", "json_output_path",
               default=None,
               help="Save JSON report to file")
-def main(files, printer, repair, output, use_json, json_output_path):
+def main(files, printer, repair, fast_repair, output, use_json, json_output_path):
     """
     \b
     dPEZ Preflight — STL Printability Analyzer
@@ -85,11 +88,15 @@ def main(files, printer, repair, output, use_json, json_output_path):
             console.print(f"[yellow]Skipping unsupported format: {filepath}[/yellow]")
             continue
 
+        # --fast-repair implies --repair
+        do_repair = repair or fast_repair
+
         # --- Run analysis ---
         report = analyze_stl(
             filepath=filepath,
             printer=printer_profile,
-            attempt_repair=repair
+            attempt_repair=do_repair,
+            fast_repair=fast_repair,
         )
 
         # --- Output ---
@@ -105,12 +112,12 @@ def main(files, printer, repair, output, use_json, json_output_path):
                 console.print(f"[dim]JSON report saved: {json_path}[/dim]")
 
         # --- Export repaired mesh ---
-        if repair and report.auto_fixable_issues():
+        if do_repair and report.auto_fixable_issues():
             out_path = output or filepath.replace('.stl', '_fixed.stl').replace('.STL', '_fixed.STL')
             from core.repair import repair_mesh, export_repaired
             import trimesh
             mesh = trimesh.load(filepath, force='mesh')
-            repaired, fixes = repair_mesh(mesh)
+            repaired, fixes = repair_mesh(mesh, fast=fast_repair)
             if export_repaired(repaired, out_path):
                 console.print(f"[green]✅ Repaired mesh exported: {out_path}[/green]")
             else:

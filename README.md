@@ -23,6 +23,9 @@ python dpez.py my_model.stl --printer prusa-mk4
 # Auto-repair and export fixed STL
 python dpez.py broken.stl --repair --output fixed.stl
 
+# Fast repair — skips pymeshfix, much faster on large meshes
+python dpez.py broken.stl --fast-repair --output fixed.stl
+
 # JSON output (for pipelines / API)
 python dpez.py my_model.stl --json
 
@@ -70,6 +73,35 @@ python dpez.py models/*.stl --printer bambu-p1s
 | 80–100  | ✅ Ready to print            |
 | 50–79   | ⚠️  Printable with warnings  |
 | 0–49    | ❌ Not ready                 |
+
+---
+
+## Repair Modes
+
+dPEZ includes an auto-repair engine that fixes common mesh issues. Two modes are available:
+
+| Flag | Mode | What it does | Speed |
+|------|------|-------------|-------|
+| `--repair` | Full | Winding fix, dedup, debris removal, **pymeshfix hole fill** (per-component, parallel) | Thorough |
+| `--fast-repair` | Fast | Winding fix, dedup, debris removal, **trimesh fill_holes** (lightweight) | ~35% faster |
+
+Both modes use a **debris-first pipeline**: floating geometry and interior cavities are removed *before* hole filling. This means pymeshfix never processes the full mesh — only the few surviving open components, in parallel.
+
+**Example on a 989k-face mesh (father.stl):**
+
+| Mode | Time | Hole repair |
+|------|------|-------------|
+| Analysis only | 77.6s | — |
+| `--fast-repair` | 50.2s | Partial (trimesh) |
+| `--repair` | 59.0s | Full (pymeshfix, parallel per-component) |
+
+```bash
+# Full repair — pymeshfix hole fill, parallel per-component
+python dpez.py father.stl --repair -o father_fixed.stl
+
+# Fast repair — lightweight hole fill, skips pymeshfix
+python dpez.py father.stl --fast-repair -o father_fixed.stl
+```
 
 ---
 
