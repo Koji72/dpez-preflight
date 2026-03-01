@@ -53,9 +53,16 @@ def repair_mesh(mesh: trimesh.Trimesh, fast: bool = False) -> Tuple[trimesh.Trim
         )
 
     # Step 3: Fill holes using pymeshfix if available (only if mesh has holes)
-    # Skipped in fast mode — pymeshfix is the bottleneck on large meshes (~990k+ faces)
+    # In fast mode, use trimesh's lightweight fill_holes instead of pymeshfix
     if fast and not mesh.is_watertight:
-        applied_fixes.append("Hole fill skipped (fast mode)")
+        try:
+            trimesh.repair.fill_holes(mesh)
+            if mesh.is_watertight:
+                applied_fixes.append("Closed open holes using trimesh fill_holes (fast mode)")
+            else:
+                applied_fixes.append("Partial hole repair via trimesh fill_holes (fast mode) — some openings remain")
+        except Exception:
+            applied_fixes.append("Hole fill skipped (fast mode — trimesh fill_holes failed)")
     elif not mesh.is_watertight and PYMESHFIX_AVAILABLE:
         try:
             mfix = pymeshfix.MeshFix(mesh.vertices, mesh.faces)
