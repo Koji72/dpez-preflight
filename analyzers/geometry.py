@@ -1,6 +1,7 @@
 """
 dPEZ Preflight — Wall Thickness & Print Geometry Analyzer
-Detects walls too thin to print, floating geometry, and extreme overhangs.
+Detects walls too thin to print, floating geometry, extreme overhangs,
+and interior cavities (trapped shells).
 """
 import trimesh
 import numpy as np
@@ -216,6 +217,79 @@ def analyze_floating_geometry(mesh: trimesh.Trimesh, component_count: int = None
                     fix_description="Auto-repair can remove bodies smaller than 1% of total volume.",
                     technical_detail=f"total_bodies={len(bodies)}, debris_count={len(debris)}"
                 ))
+    except Exception:
+        pass
+
+    return issues
+
+
+def analyze_interior_cavities(mesh: trimesh.Trimesh, component_count: int = None) -> List[Issue]:
+    """
+    Detect interior cavities — closed shells fully enclosed inside the outer body.
+    These waste infill, trap support material, and can cause print failures.
+    Uses centroid containment: if body B's centroid is inside body A, B is a cavity.
+    """
+    issues = []
+
+    # Fast path: single body = no cavities possible
+    if component_count is not None and component_count <= 1:
+        return issues
+
+    try:
+        bodies = mesh.split(only_watertight=False)
+        if len(bodies) < 2:
+            return issues
+
+        # Sort bodies by bounding box volume (largest first = outer shell)
+        body_info = []
+        for b in bodies:
+            try:
+                bb_vol = float(b.bounding_box.volume)
+            except Exception:
+                bb_vol = 0.0
+            body_info.append((bb_vol, b))
+        body_info.sort(key=lambda x: x[0], reverse=True)
+
+        # Check if smaller bodies are enclosed inside larger ones
+        cavities = []
+        for i in range(1, len(body_info)):
+            inner_vol, inner_body = body_info[i]
+            centroid = inner_body.centroid.reshape(1, 3)
+
+            for j in range(i):
+                outer_vol, outer_body = body_info[j]
+                # Only test if inner is much smaller than outer (skip near-equal pairs)
+                if inner_vol > outer_vol * 0.9:
+                    continue
+                # Outer must be watertight for contains() to work reliably
+                if not outer_body.is_watertight:
+                    continue
+                try:
+                    if outer_body.contains(centroid)[0]:
+                        cavity_vol = abs(inner_body.volume) if inner_body.is_watertight else inner_vol * 0.1
+                        cavities.append(cavity_vol)
+                        break  # found enclosing body, no need to check more
+                except Exception:
+                    continue
+
+        if cavities:
+            total_cavity_vol = sum(cavities)
+            issues.append(Issue(
+                code="INTERIOR_CAVITIES",
+                severity=Severity.WARNING,
+                title=f"{len(cavities)} interior cavity/ies detected",
+                description=(
+                    f"Found {len(cavities)} closed shell(s) fully enclosed inside the outer body. "
+                    f"Estimated trapped volume: {total_cavity_vol:.1f}mm\u00b3. "
+                    f"Interior shells waste infill material, can trap support structures, "
+                    f"and may confuse slicer inside/outside detection."
+                ),
+                affected_count=len(cavities),
+                auto_fixable=True,
+                fix_description="Auto-repair can remove interior shells to make the model solid.",
+                technical_detail=f"cavities={len(cavities)}, trapped_volume={total_cavity_vol:.1f}mm3"
+            ))
+
     except Exception:
         pass
 

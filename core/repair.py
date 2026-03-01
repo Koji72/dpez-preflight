@@ -69,28 +69,63 @@ def repair_mesh(mesh: trimesh.Trimesh) -> Tuple[trimesh.Trimesh, list]:
         except Exception as e:
             applied_fixes.append(f"Hole repair attempted but failed: {str(e)[:60]}")
 
-    # Step 4: Remove small floating bodies (only if multiple components)
+    # Step 4: Remove floating debris and interior cavities (single split pass)
     try:
         components = trimesh.graph.connected_components(mesh.face_adjacency)
         component_count = len(list(components))
 
         if component_count > 1:
             bodies = mesh.split(only_watertight=False)
-            volumes = []
+
+            # Sort by bounding box volume (largest = outer shell)
+            body_info = []
             for b in bodies:
                 try:
-                    v = abs(b.volume) if b.is_watertight else b.bounding_box.volume * 0.1
-                    volumes.append((v, b))
+                    bb_vol = float(b.bounding_box.volume)
+                    real_vol = abs(b.volume) if b.is_watertight else bb_vol * 0.1
                 except Exception:
-                    volumes.append((0, b))
+                    bb_vol, real_vol = 0.0, 0.0
+                body_info.append({"body": b, "bb_vol": bb_vol, "vol": real_vol})
+            body_info.sort(key=lambda x: x["bb_vol"], reverse=True)
 
-            main_vol = max(v for v, _ in volumes)
-            significant = [b for v, b in volumes if v >= main_vol * 0.01]
-            removed = len(volumes) - len(significant)
+            main_vol = body_info[0]["vol"]
+            keep = [body_info[0]]
+            debris_count = 0
+            cavity_count = 0
 
-            if removed > 0 and significant:
-                mesh = trimesh.util.concatenate(significant)
-                applied_fixes.append(f"Removed {removed} floating geometry fragment(s)")
+            for info in body_info[1:]:
+                # Remove tiny debris (<1% of main body)
+                if info["vol"] < main_vol * 0.01:
+                    debris_count += 1
+                    continue
+
+                # Check if this body is an interior cavity (enclosed inside a larger body)
+                is_cavity = False
+                centroid = info["body"].centroid.reshape(1, 3)
+                for outer in keep:
+                    if info["bb_vol"] > outer["bb_vol"] * 0.9:
+                        continue
+                    if not outer["body"].is_watertight:
+                        continue
+                    try:
+                        if outer["body"].contains(centroid)[0]:
+                            is_cavity = True
+                            break
+                    except Exception:
+                        continue
+
+                if is_cavity:
+                    cavity_count += 1
+                else:
+                    keep.append(info)
+
+            removed_total = debris_count + cavity_count
+            if removed_total > 0 and keep:
+                mesh = trimesh.util.concatenate([k["body"] for k in keep])
+                if debris_count > 0:
+                    applied_fixes.append(f"Removed {debris_count} floating geometry fragment(s)")
+                if cavity_count > 0:
+                    applied_fixes.append(f"Removed {cavity_count} interior cavity/ies (trapped shells)")
     except Exception:
         pass
 

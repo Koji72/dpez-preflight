@@ -12,7 +12,7 @@ from core.models import (
     PrintabilityReport, MeshStats, Issue, Severity, PrinterProfile
 )
 from analyzers.manifold  import analyze_manifold
-from analyzers.geometry  import analyze_wall_thickness, analyze_overhangs, analyze_floating_geometry
+from analyzers.geometry  import analyze_wall_thickness, analyze_overhangs, analyze_floating_geometry, analyze_interior_cavities
 from analyzers.scale     import analyze_scale
 
 
@@ -99,6 +99,7 @@ def analyze_stl(
             executor.submit(analyze_wall_thickness, mesh, printer): "wall_thickness",
             executor.submit(analyze_overhangs, mesh): "overhangs",
             executor.submit(analyze_floating_geometry, mesh, component_count): "floating",
+            executor.submit(analyze_interior_cavities, mesh, component_count): "cavities",
             executor.submit(analyze_scale, mesh, printer): "scale",
         }
         for future in as_completed(futures):
