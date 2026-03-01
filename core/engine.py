@@ -4,6 +4,7 @@ Orchestrates all analyzers and builds the final PrintabilityReport.
 """
 import time
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import trimesh
 import numpy as np
 from typing import Optional
@@ -60,40 +61,51 @@ def analyze_stl(
         return report
 
     # --- Populate mesh stats ---
+    # Compute connected_components once — reused by manifold and floating geometry analyzers
+    try:
+        components = trimesh.graph.connected_components(mesh.face_adjacency)
+        component_count = len(list(components))
+    except Exception:
+        component_count = 1
+
     stats = MeshStats(
         vertex_count=len(mesh.vertices),
         face_count=len(mesh.faces),
-        edge_count=len(mesh.edges_unique) if hasattr(mesh, 'edges_unique') else 0,
+        edge_count=0,
         is_watertight=mesh.is_watertight,
         is_winding_consistent=mesh.is_winding_consistent,
         bounding_box=tuple(mesh.bounding_box.extents.tolist()),
     )
-    
+
     try:
         stats.surface_area = float(mesh.area)
     except Exception:
         pass
-    
+
     try:
         stats.volume = float(abs(mesh.volume)) if mesh.is_watertight else 0.0
     except Exception:
         pass
-    
-    try:
-        components = trimesh.graph.connected_components(mesh.face_adjacency)
-        stats.component_count = len(list(components))
-    except Exception:
-        stats.component_count = 1
 
+    stats.component_count = component_count
     report.mesh_stats = stats
 
-    # --- Run all analyzers ---
+    # --- Run analyzers in parallel ---
+    # Wall thickness (ray casting) is the slowest — runs concurrently with others
     all_issues = []
-    all_issues += analyze_manifold(mesh)
-    all_issues += analyze_wall_thickness(mesh, printer)
-    all_issues += analyze_overhangs(mesh)
-    all_issues += analyze_floating_geometry(mesh)
-    all_issues += analyze_scale(mesh, printer)
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {
+            executor.submit(analyze_manifold, mesh, component_count): "manifold",
+            executor.submit(analyze_wall_thickness, mesh, printer): "wall_thickness",
+            executor.submit(analyze_overhangs, mesh): "overhangs",
+            executor.submit(analyze_floating_geometry, mesh, component_count): "floating",
+            executor.submit(analyze_scale, mesh, printer): "scale",
+        }
+        for future in as_completed(futures):
+            try:
+                all_issues += future.result()
+            except Exception:
+                pass
 
     # Optional: auto-repair pass
     if attempt_repair:

@@ -8,22 +8,16 @@ from typing import List
 from core.models import Issue, Severity
 
 
-def analyze_manifold(mesh: trimesh.Trimesh) -> List[Issue]:
+def analyze_manifold(mesh: trimesh.Trimesh, component_count: int = None) -> List[Issue]:
     """
     Check if mesh is watertight (manifold).
     A non-watertight mesh = open holes = print failure guaranteed.
+    Accepts precomputed component_count to avoid redundant graph traversal.
     """
     issues = []
 
     # --- Watertight check ---
     if not mesh.is_watertight:
-        # Count boundary edges (edges with only 1 adjacent face = holes)
-        unique_edges = mesh.edges_unique
-        edge_face_count = np.bincount(
-            mesh.edges_face.flatten(),
-            minlength=len(unique_edges)
-        ) if hasattr(mesh, 'edges_face') else []
-
         # Use trimesh's built-in boundary detection
         try:
             boundary_edges = trimesh.graph.boundary_loops(mesh)
@@ -46,18 +40,12 @@ def analyze_manifold(mesh: trimesh.Trimesh) -> List[Issue]:
             technical_detail="mesh.is_watertight = False"
         ))
 
-    # --- Non-manifold edges ---
-    # Edges shared by more than 2 faces = impossible geometry
+    # --- Multiple bodies check (use precomputed count) ---
     try:
-        edges_sorted = np.sort(mesh.edges_face, axis=1) if hasattr(mesh, 'edges_sorted') else mesh.edges
-        # trimesh exposes this directly
-        if hasattr(mesh, 'is_valid') and not mesh.is_valid:
-            pass  # Will be caught elsewhere
-        
-        # Check via body_count proxy — multiple disconnected bodies = complexity risk
-        components = trimesh.graph.connected_components(mesh.face_adjacency)
-        component_count = len(list(components))
-        
+        if component_count is None:
+            components = trimesh.graph.connected_components(mesh.face_adjacency)
+            component_count = len(list(components))
+
         if component_count > 1:
             issues.append(Issue(
                 code="MULTIPLE_BODIES",

@@ -34,16 +34,23 @@ def analyze_wall_thickness(mesh: trimesh.Trimesh, printer: PrinterProfile) -> Li
         # Sample face centroids and cast rays inward along face normals
         # to estimate local thickness. Seed for reproducibility.
         rng = np.random.default_rng(seed=42)
-        sample_count = min(500, len(mesh.faces))
-        sample_indices = rng.choice(len(mesh.faces), sample_count, replace=False)
-        
+        face_count = len(mesh.faces)
+        # Adaptive sampling: fewer rays for large meshes (diminishing returns)
+        if face_count < 1000:
+            sample_count = face_count
+        elif face_count < 50000:
+            sample_count = 200
+        else:
+            sample_count = 150  # large meshes: ray cast is O(samples * faces)
+        sample_indices = rng.choice(face_count, sample_count, replace=False)
+
         face_centers = mesh.triangles_center[sample_indices]
-        face_normals = mesh.face_normals[sample_indices]
-        
+        face_normals_sampled = mesh.face_normals[sample_indices]
+
         # Cast rays inward (opposite normal direction)
-        ray_origins = face_centers + face_normals * 0.01  # small offset
-        ray_directions = -face_normals
-        
+        ray_origins = face_centers + face_normals_sampled * 0.01  # small offset
+        ray_directions = -face_normals_sampled
+
         locations, index_ray, _ = mesh.ray.intersects_location(
             ray_origins=ray_origins,
             ray_directions=ray_directions,
@@ -161,17 +168,22 @@ def analyze_overhangs(mesh: trimesh.Trimesh) -> List[Issue]:
     return issues
 
 
-def analyze_floating_geometry(mesh: trimesh.Trimesh) -> List[Issue]:
+def analyze_floating_geometry(mesh: trimesh.Trimesh, component_count: int = None) -> List[Issue]:
     """
     Detect geometry that has no connection to the main body.
     Floating pieces = print artifacts or failures.
+    Accepts precomputed component_count to skip expensive split on single-body meshes.
     """
     issues = []
-    
+
+    # Fast path: skip expensive mesh.split() if we already know there's only 1 body
+    if component_count is not None and component_count <= 1:
+        return issues
+
     try:
         # Split into bodies and check for small disconnected pieces
         bodies = mesh.split(only_watertight=False)
-        
+
         if len(bodies) > 1:
             # Sort by volume
             volumes = []
