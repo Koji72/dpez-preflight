@@ -1,0 +1,134 @@
+{
+  "dpez_version": "0.1.0",
+  "file": {
+    "name": "father.stl",
+    "size_kb": 48322.35
+  },
+  "printer": "Bambu X1C / X1E",
+  "result": {
+    "score": 2,
+    "ready_to_print": false,
+    "verdict": "\u274c Not ready \u2014 2 critical issue(s)  (score: 2/100)",
+    "critical_count": 2,
+    "warning_count": 4,
+    "auto_fixable_count": 3,
+    "analysis_time_ms": 103924.3
+  },
+  "mesh": {
+    "vertices": 497952,
+    "faces": 989640,
+    "edges": 0,
+    "volume_mm3": 0.0,
+    "surface_area_mm2": 3339.647,
+    "dimensions_mm": {
+      "x": 21.21,
+      "y": 25.4,
+      "z": 14.89
+    },
+    "watertight": false,
+    "winding_consistent": true,
+    "component_count": 2597
+  },
+  "issues": [
+    {
+      "code": "OPEN_MESH",
+      "severity": "critical",
+      "title": "Mesh is not watertight (has holes)",
+      "description": "The model has unknown number of open boundary loop(s). FDM slicers cannot calculate a valid volume, which causes incorrect infill, missing walls, or complete slice failure.",
+      "affected_count": 0,
+      "auto_fixable": true,
+      "fix": "Auto-repair can close most simple holes using pymeshfix.",
+      "technical_detail": "mesh.is_watertight = False"
+    },
+    {
+      "code": "MULTIPLE_BODIES",
+      "severity": "warning",
+      "title": "Mesh has 2597 disconnected bodies",
+      "description": "The file contains 2597 separate geometric bodies. This is common in assemblies or decorative models, but can cause unexpected infill behavior. Each body should be intentional.",
+      "affected_count": 2597,
+      "auto_fixable": false,
+      "fix": "Review in ZBrush/Blender \u2014 merge if bodies should be connected.",
+      "technical_detail": "connected_components = 2597"
+    },
+    {
+      "code": "HEAVY_OVERHANGS",
+      "severity": "warning",
+      "title": "Heavy overhangs detected (16% of faces)",
+      "description": "163,199 faces exceed 45\u00b0 overhang angle. This model will require significant support structures. Consider reorienting the model or redesigning bridging sections to reduce support material and improve surface quality.",
+      "affected_count": 163199,
+      "auto_fixable": false,
+      "fix": "Re-orient model in slicer or use manual supports at critical zones.",
+      "technical_detail": "overhang_faces=163199, ratio=16.49%"
+    },
+    {
+      "code": "FLOATING_GEOMETRY",
+      "severity": "warning",
+      "title": "2843 floating geometry piece(s) detected",
+      "description": "Found 2843 disconnected geometry fragment(s) much smaller than the main body. These are likely sculpting artifacts or stray vertices that will print as blobs or be ignored by the slicer unpredictably.",
+      "affected_count": 2843,
+      "auto_fixable": true,
+      "fix": "Auto-repair can remove bodies smaller than 1% of total volume.",
+      "technical_detail": "total_bodies=2857, debris_count=2843"
+    },
+    {
+      "code": "THIN_WALLS",
+      "severity": "critical",
+      "title": "Walls thinner than 0.4mm detected",
+      "description": "~100% of sampled surfaces have wall thickness below 0.4mm (minimum for Bambu X1C / X1E). Thinnest detected: 0.01mm. These sections will print as air or collapse mid-print.",
+      "affected_count": 149,
+      "auto_fixable": false,
+      "fix": "Thicken walls to minimum 0.4mm in ZBrush (ZRemesher + Polish) or source app.",
+      "technical_detail": "min_thickness=0.010mm, threshold=0.4mm"
+    },
+    {
+      "code": "INTERIOR_CAVITIES",
+      "severity": "warning",
+      "title": "1173 interior cavity/ies detected",
+      "description": "Found 1173 closed shell(s) fully enclosed inside the outer body. Estimated trapped volume: 17.6mm\u00b3. Interior shells waste infill material, can trap support structures, and may confuse slicer inside/outside detection.",
+      "affected_count": 1173,
+      "auto_fixable": true,
+      "fix": "Auto-repair can remove interior shells to make the model solid.",
+      "technical_detail": "cavities=1173, trapped_volume=17.6mm3"
+    },
+    {
+      "code": "AUTO_REPAIR_APPLIED",
+      "severity": "info",
+      "title": "Auto-repair applied",
+      "description": "Removed 0 duplicate vertex/vertices and 1790 degenerate triangle(s)",
+      "affected_count": 0,
+      "auto_fixable": false,
+      "fix": null,
+      "technical_detail": null
+    },
+    {
+      "code": "AUTO_REPAIR_APPLIED",
+      "severity": "info",
+      "title": "Auto-repair applied",
+      "description": "Removed 1818 floating geometry fragment(s)",
+      "affected_count": 0,
+      "auto_fixable": false,
+      "fix": null,
+      "technical_detail": null
+    },
+    {
+      "code": "AUTO_REPAIR_APPLIED",
+      "severity": "info",
+      "title": "Auto-repair applied",
+      "description": "Removed 1 interior cavity/ies (trapped shells)",
+      "affected_count": 0,
+      "auto_fixable": false,
+      "fix": null,
+      "technical_detail": null
+    },
+    {
+      "code": "AUTO_REPAIR_APPLIED",
+      "severity": "info",
+      "title": "Auto-repair applied",
+      "description": "Partial hole repair via trimesh fill_holes (fast mode) \u2014 some openings remain",
+      "affected_count": 0,
+      "auto_fixable": false,
+      "fix": null,
+      "technical_detail": null
+    }
+  ]
+}
