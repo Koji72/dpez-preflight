@@ -14,10 +14,13 @@ except ImportError:
     PYMESHFIX_AVAILABLE = False
 
 
-def repair_mesh(mesh: trimesh.Trimesh) -> Tuple[trimesh.Trimesh, list]:
+def repair_mesh(mesh: trimesh.Trimesh, fast: bool = False) -> Tuple[trimesh.Trimesh, list]:
     """
     Attempt automatic repair of common mesh issues.
     Returns (repaired_mesh, list_of_applied_fixes).
+
+    When fast=True, skips pymeshfix hole filling (the slowest step on large meshes).
+    Still performs winding fix, dedup, and debris/cavity removal.
     """
     applied_fixes = []
 
@@ -50,7 +53,10 @@ def repair_mesh(mesh: trimesh.Trimesh) -> Tuple[trimesh.Trimesh, list]:
         )
 
     # Step 3: Fill holes using pymeshfix if available (only if mesh has holes)
-    if not mesh.is_watertight and PYMESHFIX_AVAILABLE:
+    # Skipped in fast mode — pymeshfix is the bottleneck on large meshes (~990k+ faces)
+    if fast and not mesh.is_watertight:
+        applied_fixes.append("Hole fill skipped (fast mode)")
+    elif not mesh.is_watertight and PYMESHFIX_AVAILABLE:
         try:
             mfix = pymeshfix.MeshFix(mesh.vertices, mesh.faces)
             # joincomp=False is much faster — skip joining disconnected shells

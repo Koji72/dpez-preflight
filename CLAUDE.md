@@ -16,6 +16,7 @@ pip install -r requirements.txt
 python dpez.py model.stl                          # Analyze a file
 python dpez.py model.stl --printer prusa-mk4       # Specific printer
 python dpez.py model.stl --repair --output fixed.stl  # Auto-repair
+python dpez.py model.stl --fast-repair             # Fast repair (skips pymeshfix)
 python dpez.py model.stl --json                    # JSON output
 python dpez.py models/*.stl                        # Batch processing
 ```
