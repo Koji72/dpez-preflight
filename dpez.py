@@ -26,6 +26,14 @@ from reporters.terminal      import print_report, console
 from reporters.json_reporter import print_json, save_json as save_json_report
 
 
+def _make_output_path(filepath: str) -> str:
+    """Generate a safe output path for repaired mesh, handling any extension."""
+    base, ext = os.path.splitext(filepath)
+    if not ext:
+        ext = '.stl'
+    return f"{base}_fixed{ext}"
+
+
 PRINTER_MAP = {
     "bambu-x1c":   PrinterProfile.BAMBU_X1C,
     "bambu-p1s":   PrinterProfile.BAMBU_P1S,
@@ -83,7 +91,15 @@ def main(files, printer, repair, fast_repair, output, use_json, json_output_path
         if not os.path.exists(filepath):
             console.print(f"[red]File not found: {filepath}[/red]")
             continue
-        
+
+        if not os.access(filepath, os.R_OK):
+            console.print(f"[red]Permission denied: {filepath}[/red]")
+            continue
+
+        if os.path.getsize(filepath) == 0:
+            console.print(f"[red]Empty file: {filepath}[/red]")
+            continue
+
         if not filepath.lower().endswith(('.stl', '.obj', '.3mf')):
             console.print(f"[yellow]Skipping unsupported format: {filepath}[/yellow]")
             continue
@@ -111,14 +127,11 @@ def main(files, printer, repair, fast_repair, output, use_json, json_output_path
             if not use_json:
                 console.print(f"[dim]JSON report saved: {json_path}[/dim]")
 
-        # --- Export repaired mesh ---
-        if do_repair and report.auto_fixable_issues():
-            out_path = output or filepath.replace('.stl', '_fixed.stl').replace('.STL', '_fixed.STL')
-            from core.repair import repair_mesh, export_repaired
-            import trimesh
-            mesh = trimesh.load(filepath, force='mesh')
-            repaired, fixes = repair_mesh(mesh, fast=fast_repair)
-            if export_repaired(repaired, out_path):
+        # --- Export repaired mesh (uses mesh already repaired during analysis) ---
+        if do_repair and report.repaired_mesh is not None:
+            out_path = output or _make_output_path(filepath)
+            from core.repair import export_repaired
+            if export_repaired(report.repaired_mesh, out_path):
                 console.print(f"[green]✅ Repaired mesh exported: {out_path}[/green]")
             else:
                 console.print(f"[red]❌ Failed to export repaired mesh.[/red]")

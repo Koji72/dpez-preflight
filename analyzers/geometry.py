@@ -169,11 +169,11 @@ def analyze_overhangs(mesh: trimesh.Trimesh) -> List[Issue]:
     return issues
 
 
-def analyze_floating_geometry(mesh: trimesh.Trimesh, component_count: int = None) -> List[Issue]:
+def analyze_floating_geometry(mesh: trimesh.Trimesh, component_count: int = None, bodies: list = None) -> List[Issue]:
     """
     Detect geometry that has no connection to the main body.
     Floating pieces = print artifacts or failures.
-    Accepts precomputed component_count to skip expensive split on single-body meshes.
+    Accepts precomputed component_count and pre-split bodies to avoid redundant mesh.split().
     """
     issues = []
 
@@ -182,8 +182,8 @@ def analyze_floating_geometry(mesh: trimesh.Trimesh, component_count: int = None
         return issues
 
     try:
-        # Split into bodies and check for small disconnected pieces
-        bodies = mesh.split(only_watertight=False)
+        # Use pre-split bodies if available, otherwise split here
+        bodies = bodies if bodies is not None else mesh.split(only_watertight=False)
 
         if len(bodies) > 1:
             # Sort by volume
@@ -223,11 +223,12 @@ def analyze_floating_geometry(mesh: trimesh.Trimesh, component_count: int = None
     return issues
 
 
-def analyze_interior_cavities(mesh: trimesh.Trimesh, component_count: int = None) -> List[Issue]:
+def analyze_interior_cavities(mesh: trimesh.Trimesh, component_count: int = None, bodies: list = None) -> List[Issue]:
     """
     Detect interior cavities — closed shells fully enclosed inside the outer body.
     These waste infill, trap support material, and can cause print failures.
     Uses centroid containment: if body B's centroid is inside body A, B is a cavity.
+    Accepts pre-split bodies to avoid redundant mesh.split().
     """
     issues = []
 
@@ -236,7 +237,8 @@ def analyze_interior_cavities(mesh: trimesh.Trimesh, component_count: int = None
         return issues
 
     try:
-        bodies = mesh.split(only_watertight=False)
+        # Use pre-split bodies if available, otherwise split here
+        bodies = bodies if bodies is not None else mesh.split(only_watertight=False)
         if len(bodies) < 2:
             return issues
 

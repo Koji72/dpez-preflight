@@ -69,6 +69,9 @@ class PrintabilityReport:
     
     # Timing
     analysis_time_ms: float = 0.0
+
+    # Transient: holds repaired mesh for export (not serialized)
+    repaired_mesh: Optional[object] = field(default=None, repr=False)
     
     def critical_issues(self) -> List[Issue]:
         return [i for i in self.issues if i.severity == Severity.CRITICAL]

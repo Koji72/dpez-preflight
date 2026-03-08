@@ -61,6 +61,19 @@ def analyze_stl(
         report.analysis_time_ms = (time.perf_counter() - t_start) * 1000
         return report
 
+    # --- Empty mesh guard ---
+    if len(mesh.faces) == 0 or len(mesh.vertices) == 0:
+        report.issues.append(Issue(
+            code="EMPTY_MESH",
+            severity=Severity.CRITICAL,
+            title="Mesh is empty (no geometry)",
+            description="The file was loaded but contains no vertices or faces.",
+        ))
+        report.score = 0
+        report.verdict = "❌ Empty mesh — no geometry to analyze"
+        report.analysis_time_ms = (time.perf_counter() - t_start) * 1000
+        return report
+
     # --- Populate mesh stats ---
     # Compute connected_components once — reused by manifold and floating geometry analyzers
     try:
@@ -69,10 +82,15 @@ def analyze_stl(
     except Exception:
         component_count = 1
 
+    try:
+        edge_count_val = len(mesh.edges_unique)
+    except Exception:
+        edge_count_val = 0
+
     stats = MeshStats(
         vertex_count=len(mesh.vertices),
         face_count=len(mesh.faces),
-        edge_count=0,
+        edge_count=edge_count_val,
         is_watertight=mesh.is_watertight,
         is_winding_consistent=mesh.is_winding_consistent,
         bounding_box=tuple(mesh.bounding_box.extents.tolist()),
@@ -91,6 +109,15 @@ def analyze_stl(
     stats.component_count = component_count
     report.mesh_stats = stats
 
+    # --- Pre-split bodies once (reused by floating geometry + cavity analyzers) ---
+    if component_count > 1:
+        try:
+            split_bodies = mesh.split(only_watertight=False)
+        except Exception:
+            split_bodies = [mesh]
+    else:
+        split_bodies = None
+
     # --- Run analyzers in parallel ---
     # Wall thickness (ray casting) is the slowest — runs concurrently with others
     all_issues = []
@@ -99,20 +126,28 @@ def analyze_stl(
             executor.submit(analyze_manifold, mesh, component_count): "manifold",
             executor.submit(analyze_wall_thickness, mesh, printer): "wall_thickness",
             executor.submit(analyze_overhangs, mesh): "overhangs",
-            executor.submit(analyze_floating_geometry, mesh, component_count): "floating",
-            executor.submit(analyze_interior_cavities, mesh, component_count): "cavities",
+            executor.submit(analyze_floating_geometry, mesh, component_count, split_bodies): "floating",
+            executor.submit(analyze_interior_cavities, mesh, component_count, split_bodies): "cavities",
             executor.submit(analyze_scale, mesh, printer): "scale",
         }
         for future in as_completed(futures):
+            analyzer_name = futures[future]
             try:
                 all_issues += future.result()
-            except Exception:
-                pass
+            except Exception as e:
+                all_issues.append(Issue(
+                    code="ANALYZER_FAILED",
+                    severity=Severity.INFO,
+                    title=f"Analyzer '{analyzer_name}' skipped due to error",
+                    description=f"The {analyzer_name} analysis could not complete: {str(e)[:120]}",
+                    auto_fixable=False,
+                ))
 
     # Optional: auto-repair pass
     if attempt_repair:
         from core.repair import repair_mesh
         repaired_mesh, applied_fixes = repair_mesh(mesh, fast=fast_repair)
+        report.repaired_mesh = repaired_mesh
         if applied_fixes:
             for fix in applied_fixes:
                 all_issues.append(Issue(
